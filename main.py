@@ -26,9 +26,9 @@ class PawnDB:
         self.create_tables()
 
     def connect(self):
-        config = Path(__file__).parent / "config.json"
-        if config.exists() and USE_MYSQL:
-            with open(config) as f:
+        cfg_file = Path(__file__).parent / "config.json"
+        if cfg_file.exists() and USE_MYSQL:
+            with open(cfg_file) as f:
                 conf = json.load(f).get("remote", {})
             try:
                 self.conn = pymysql.connect(
@@ -51,21 +51,27 @@ class PawnDB:
 
     def create_tables(self):
         if self.db_type == "mysql":
-            self.execute('''
+            self.execute(
+                """
                 CREATE TABLE IF NOT EXISTS pawn_records (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     name TEXT, cccd TEXT, items TEXT,
                     total_amount DOUBLE, date_pawn TEXT,
                     date_redeemed TEXT, status TEXT
-                )''')
+                )
+                """
+            )
         else:
-            self.execute('''
+            self.execute(
+                """
                 CREATE TABLE IF NOT EXISTS pawn_records (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT, cccd TEXT, items TEXT,
                     total_amount REAL, date_pawn TEXT,
                     date_redeemed TEXT, status TEXT
-                )''')
+                )
+                """
+            )
 
     def add_record(self, name, cccd, items, total_amount, date_pawn):
         args = (name, cccd, json.dumps(items), total_amount, date_pawn)
@@ -86,21 +92,20 @@ class PawnDB:
         return now
 
     def all_records(self):
-        cur = self.execute("SELECT * FROM pawn_records")
-        rows = cur.fetchall()
-        normalized = []
+        rows = self.execute("SELECT * FROM pawn_records").fetchall()
+        result = []
         for row in rows:
             if self.db_type == "mysql":
-                normalized.append((
+                result.append((
                     row['id'], row['name'], row['cccd'], row['items'],
                     float(row['total_amount']), row['date_pawn'], row['date_redeemed'], row['status']
                 ))
             else:
-                normalized.append((
+                result.append((
                     row['id'], row['name'], row['cccd'], row['items'],
                     row['total_amount'], row['date_pawn'], row['date_redeemed'], row['status']
                 ))
-        return normalized
+        return result
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -120,7 +125,7 @@ class MainWindow(QWidget):
         form.addRow("Họ và tên:", self.name_input)
         form.addRow("Số CCCD:", self.cccd_input)
 
-        self.total_input = QSpinBox(); self.total_input.setMaximum(10**9); self.total_input.setPrefix("VNĐ "); self.total_input.setMinimumWidth(200)
+        self.total_input = QSpinBox(); self.total_input.setMaximum(10**9); self.total_input.setSuffix("VNĐ "); self.total_input.setMinimumWidth(200)
         form.addRow("Tổng số tiền cầm:", self.total_input)
 
         self.items_table = QTableWidget(0, 5)
@@ -129,7 +134,6 @@ class MainWindow(QWidget):
         hdr.setSectionResizeMode(0, QHeaderView.Fixed); self.items_table.setColumnWidth(0,50)
         hdr.setSectionResizeMode(1, QHeaderView.Stretch)
         for i in (2,3,4): hdr.setSectionResizeMode(i, QHeaderView.ResizeToContents)
-
         add_item_btn = QPushButton("Thêm Món"); add_item_btn.clicked.connect(self.add_item_row)
         remove_item_btn = QPushButton("Xóa Món Được Chọn"); remove_item_btn.clicked.connect(self.remove_selected_item)
         form.addRow(add_item_btn, remove_item_btn)
@@ -138,7 +142,7 @@ class MainWindow(QWidget):
         self.add_btn = QPushButton("Thêm Khách"); self.add_btn.clicked.connect(self.add_record)
 
         ctrl = QHBoxLayout()
-        self.search_field = QComboBox(); self.search_field.addItems(["name","cccd","item"])
+        self.search_field = QComboBox(); self.search_field.addItems(["name","cccd","item"]);
         self.search_input = QLineEdit(); self.search_input.setPlaceholderText("Tìm từ khóa")
         self.date_from = QDateEdit(); self.date_from.setCalendarPopup(True); self.date_from.setDisplayFormat("yyyy-MM-dd"); self.date_from.setDate(date.today().replace(day=1))
         self.date_to = QDateEdit(); self.date_to.setCalendarPopup(True); self.date_to.setDisplayFormat("yyyy-MM-dd"); self.date_to.setDate(date.today())
@@ -147,6 +151,7 @@ class MainWindow(QWidget):
         for w in [QLabel("Tìm theo:"),self.search_field,self.search_input,QLabel("Từ ngày:"),self.date_from,QLabel("Đến ngày:"),self.date_to,QLabel("Sắp xếp"),self.sort_status,self.search_btn]: ctrl.addWidget(w)
 
         self.table = QTableWidget(0,9)
+        self.table.setWordWrap(False)
         self.table.setHorizontalHeaderLabels(["ID","Khách","CCCD","Món (SL,Chỉ)","Tổng tiền","Ngày cầm","Ngày chuộc","Trạng thái","Lãi (VNĐ)"])
         th = self.table.horizontalHeader()
         th.setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -168,7 +173,7 @@ class MainWindow(QWidget):
         self.items_table.setCellWidget(r,3,QCheckBox()); self.items_table.setCellWidget(r,4,QCheckBox())
 
     def remove_selected_item(self):
-        r = self.items_table.currentRow()
+        r = self.items_table.currentRow();
         if r >= 0: self.items_table.removeRow(r)
 
     def clear_inputs(self):
@@ -208,12 +213,19 @@ class MainWindow(QWidget):
 
         self.table.setRowCount(0)
         for id_, nm, cc, items, total, dp, dr, st in data:
-            descs = [f"{it['qty']}x{it['desc']}({it['wt']}Chỉ)" for it in items]
+            descs = []
+            for it in items:
+                descs.append(f"{it['qty']}x{it['desc']}({it['wt']}Chỉ)[{it['purity']}]" )
+            desc_text = '; '.join(descs)
             dr_display = dr if st == 'Đã Chuộc' else ''
             intr = self.compute_interest(total, dp, dr_display or dp)
             row = self.table.rowCount(); self.table.insertRow(row)
-            vals = [id_, nm, cc, "; ".join(descs), f"{total:,.0f}".replace(',', '.'), dp, dr_display, st, f"{intr:,.0f}".replace(',', '.')]
-            for i, v in enumerate(vals): self.table.setItem(row, i, QTableWidgetItem(str(v)))
+            values = [id_, nm, cc, desc_text, f"{total:,.0f}".replace(',', '.'), dp, dr_display, st, f"{intr:,.0f}".replace(',', '.')]
+            for i, v in enumerate(values):
+                item = QTableWidgetItem(str(v))
+                item.setFlags(item.flags() ^ Qt.ItemIsEditable)
+                self.table.setItem(row, i, item)
+        self.table.resizeRowsToContents()
 
     def change_status(self, row, _):
         id_ = int(self.table.item(row, 0).text()); cur = self.table.item(row, 7).text()
@@ -221,10 +233,11 @@ class MainWindow(QWidget):
         if QMessageBox.question(self, 'Xác nhận', f'Chuyển thành {nxt}?', QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             rd = self.db.update_status(id_, nxt)
             self.load_records(); self.update_footer()
-            rec = [r for r in self.db.all_records() if r['id'] == id_][0]
-            intr = self.compute_interest(rec['total_amount'], rec['date_pawn'], rd)
-            QMessageBox.information(self, 'Thông tin chuộc',
-                f"ID: {id_}\nKhách: {rec['name']}\nTổng tiền: {rec['total_amount']:,.0f}\nNgày cầm: {rec['date_pawn']}\nNgày chuộc: {rd}\nLãi: {intr:,.0f}".replace(',', '.')
+            rec = [r for r in self.db.all_records() if r[0] == id_][0]
+            intr = self.compute_interest(rec[4], rec[5], rd)
+            QMessageBox.information(
+                self, 'Thông tin chuộc',
+                f"ID: {id_}\nKhách: {rec[1]}\nTổng tiền: {rec[4]:,.0f}\nNgày cầm: {rec[5]}\nNgày chuộc: {rd}\nLãi: {intr:,.0f}".replace(',', '.')
             )
 
     def update_footer(self):
@@ -246,17 +259,18 @@ class MainWindow(QWidget):
             else:
                 tot, st, dp, dr = row
             tp += tot
-            pd = datetime.fromisoformat(dp).date()
+            dp_date = datetime.fromisoformat(dp).date()
+            fd = first_date
             if st == 'Chưa Chuộc':
-                days = (today - pd).days + 1
-            else:
-                days = 0
-                if dr:
-                    rd = datetime.fromisoformat(dr).date()
-                    fd = first_date
-                    if rd >= fd:
-                        days = (rd - fd).days + 1
-            ti += tot * INTEREST_RATE * days / 30
+                base = max(dp_date, fd)
+                days = (today - base).days + 1
+                ti += tot * INTEREST_RATE * days / 30
+            elif dr:
+                rd_date = datetime.fromisoformat(dr).date()
+                if rd_date >= fd:
+                    base = max(dp_date, fd)
+                    days = (rd_date - base).days + 1
+                    ti += tot * INTEREST_RATE * days / 30
         self.footer.setText(
             f"Tổng cầm: {tp:,.0f}".replace(",", ".") +
             f" VNĐ  |  Lãi tháng: {ti:,.0f}".replace(",", ".")
