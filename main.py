@@ -7,7 +7,8 @@ from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QFormLayout, QLineEdit, QPushButton,
     QHBoxLayout, QVBoxLayout, QTableWidget, QTableWidgetItem,
-    QMessageBox, QLabel, QComboBox, QCheckBox, QSpinBox, QDateEdit
+    QMessageBox, QLabel, QComboBox, QCheckBox, QSpinBox, QDateEdit,
+    QHeaderView
 )
 from PyQt5.QtCore import Qt, QTimer
 
@@ -78,10 +79,19 @@ class MainWindow(QWidget):
         self.items_table = QTableWidget(0, 5)
         self.items_table.setHorizontalHeaderLabels(["SL", "Món hàng", "Trọng lượng (Chỉ)", "15K", "23K"])
         self.items_table.setMinimumWidth(700)
-        add_item_btn = QPushButton("Thêm Món"); add_item_btn.clicked.connect(self.add_item_row)
-        form.addRow(add_item_btn, self.items_table)
+        self.items_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
-        self.add_btn = QPushButton("Thêm Khách"); self.add_btn.clicked.connect(self.add_record)
+        add_item_btn = QPushButton("Thêm Món")
+        add_item_btn.clicked.connect(self.add_item_row)
+
+        remove_item_btn = QPushButton("Xóa Món Được Chọn")
+        remove_item_btn.clicked.connect(self.remove_selected_item)
+
+        form.addRow(add_item_btn, remove_item_btn)
+        form.addRow(self.items_table)
+
+        self.add_btn = QPushButton("Thêm Khách")
+        self.add_btn.clicked.connect(self.add_record)
 
         control_layout = QHBoxLayout()
         self.search_field = QComboBox(); self.search_field.addItems(["name","cccd","item"])
@@ -96,12 +106,18 @@ class MainWindow(QWidget):
 
         self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(["ID","Khách","CCCD","Món (SL,Chỉ)","Tổng tiền","Ngày cầm","Ngày chuộc","Trạng thái","Lãi (VNĐ)"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.cellDoubleClicked.connect(self.change_status)
 
         self.footer = QLabel()
         timer = QTimer(self); timer.timeout.connect(self.update_footer); timer.start(60000)
 
-        main = QVBoxLayout(); main.addLayout(form); main.addWidget(self.add_btn); main.addLayout(control_layout); main.addWidget(self.table); main.addWidget(self.footer)
+        main = QVBoxLayout()
+        main.addLayout(form)
+        main.addWidget(self.add_btn)
+        main.addLayout(control_layout)
+        main.addWidget(self.table)
+        main.addWidget(self.footer)
         self.setLayout(main)
 
     def add_item_row(self):
@@ -109,6 +125,11 @@ class MainWindow(QWidget):
         self.items_table.setItem(r,0,QTableWidgetItem("1"))
         for c in (1,2): self.items_table.setItem(r,c,QTableWidgetItem(""))
         self.items_table.setCellWidget(r,3,QCheckBox()); self.items_table.setCellWidget(r,4,QCheckBox())
+
+    def remove_selected_item(self):
+        current_row = self.items_table.currentRow()
+        if current_row >= 0:
+            self.items_table.removeRow(current_row)
 
     def add_record(self):
         name=self.name_input.text().strip(); cccd=self.cccd_input.text().strip()
@@ -167,16 +188,18 @@ class MainWindow(QWidget):
         first_date = today.replace(day=1)
         first = first_date.isoformat()
         c = self.db.conn.cursor()
-        c.execute("SELECT total_amount, status, date_redeemed FROM pawn_records WHERE date_pawn >= ?", (first,))
+        c.execute("SELECT total_amount, status, date_pawn, date_redeemed FROM pawn_records WHERE date_pawn >= ?", (first,))
         tp = ti = 0
-        for tot, st, dr in c.fetchall():
+        for tot, st, dp, dr in c.fetchall():
             tp += tot
+            pawn_date = datetime.fromisoformat(dp).date()
             if st == 'Chưa Chuộc':
-                days = (today - first_date).days + 1
+                days = (today - pawn_date).days + 1
             else:
                 if dr:
                     rd = datetime.fromisoformat(dr).date()
-                    days = (rd - first_date).days + 1 if rd >= first_date else 0
+                    from_day = max(pawn_date, first_date)
+                    days = (rd - from_day).days + 1 if rd >= from_day else 0
                 else:
                     days = 0
             ti += tot * INTEREST_RATE * days / 30
