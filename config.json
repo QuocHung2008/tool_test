@@ -1,6 +1,6 @@
 {
   "remote": {
-    "host": "192.168.2.240",
+    "host": "192.168.1.240",
     "user": "admin",
     "password": "123456",
     "database": "pawnshop_db"
